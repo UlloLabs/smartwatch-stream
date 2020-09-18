@@ -1,183 +1,147 @@
-# credits to code from: https://github.com/IanHarvey/bluepy/issues/53
+from bluepy.btle import AssignedNumbers
+from pylsl import StreamInfo, StreamOutlet
 
-# TODO: get all RR values?
+# pointing to local libs
+import sys, os
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.realpath(__file__)), './extern/GattDevice'))
+from gatt_device import GattDevice
 
-from bluepy.btle import Peripheral, ADDR_TYPE_RANDOM, AssignedNumbers
-import time, timeit, struct, argparse, thread
+import struct, argparse, timeit
 
-class HRM():
-    def __init__(self, addr, israte, threaded_connection = False):
+# Notice that we might push several IBI at once to LSL output, and effective IBI sampling rate might vary a lot.
+
+# TODO
+# - check smartwatch sampling rate
+# - we might get more than one IBI at times, depending on smartwatches
+# - better handle both python version? check data format
+
+# how often we expect to get new data from device (Hz)
+SAMPLINGRATE_HR = 1
+SAMPLINGRATE_IBI = 1
+
+# data format changed between version
+if (sys.version_info > (3, 0)):
+    PYTHON_VERSION = 3
+else:
+    PYTHON_VERSION = 2
+
+class HRM(GattDevice):
+    def __init__(self, addr, addr_type, service_id, char_id, reconnect = False, verbose = False):
         """
-        Init smartwatch, will launch upon init
-            addr: MAC address to connect to
-            threaded_connection: will try to connect in a separate thread
-            israte: sampling rate of the data coming from device (Hz)
-
+        addr: MAC adresse
+        addr_type: BLE adresse can be random (0) or public (1)
+        service_id: GATT service ID
+        char_id: GATT characteristic ID
+        reconnect: will loop connection indefinitely, launching in in separate thread, upon init and in case BLE breaks. Side effect: if set init function will return immediately, before actually being connected, otherwise blocking call until a connexion attempt has been made
+        verbose: debug info to stdout
         """
-        self.addr = addr
-        self.israte = israte
-        self.threaded_connection = threaded_connection
-        # waiting for connetion
-        self.active = False
-        self.connecting = False
-        # we cannot change that yet, how between two connection attempts (in seconds)
-        self.reco_timeout = 2
-        self.last_con = 0
-    
-        # last value for both,
-        self.bpm = -1
-        self.rr = -1
-    
-        self.tick = timeit.default_timer()
+        super(HRM, self).__init__(addr, addr_type, service_id, char_id, handler=self.print_hr, reconnect=reconnect, verbose=verbose)    
+        self.hr = 0
+        # this one is a list, because we could retrieve several IBI at once
+        self.ibi = [0]
+        # hack here, because IBI values are mixed with HR /sometimes/ we need another check beside the return of waitForNotification in GattDevice to detect new ones
+        self.newIBI = False
 
-        self.connect()
-        
-    def connect(self):
-        """
-        Attempt to (re)connect to device if not active.
-        FIXME: put some lock for more reliability
-        """
-        # don't try to go further if already connected are getting to it
-        if self.active or self.connecting:
-          return 
-        self.connecting = True
-        if self.threaded_connection:
-            print("BLE: Will attempt to connect through a separate thread.")
-            thread.start_new_thread(self._do_connect, ())
-        else:
-            self._do_connect() 
-    
-    def _do_connect(self):
-        """ The actual function for connection, connect() should be called to handle optional threading. """
-        # we don't do double connections
-        if self.active:
-          return
-      
-         # first resolve said stream type on the network
-        self.last_con = timeit.default_timer()
-    
-        cccid = AssignedNumbers.client_characteristic_configuration
-        hrmid = AssignedNumbers.heart_rate
-        hrmmid = AssignedNumbers.heart_rate_measurement
-    
-        try: 
-            print "connecting to device", self.addr, " in random mode"
-            self.per = Peripheral(self.addr, addrType=ADDR_TYPE_RANDOM)
-            print "...connected"
-    
-            service, = [s for s in self.per.getServices() if s.uuid==hrmid]
-            print "Got service"
-            ccc, = service.getCharacteristics(forUUID=str(hrmmid))
-            print "Got characteristic"
-            desc = self.per.getDescriptors(service.hndStart, service.hndEnd)
-            d, = [d for d in desc if d.uuid==cccid]
-            print "Got descriptor, writing init sequence"
-            self.per.writeCharacteristic(d.handle, '\1\0')
-    
-    
-            self.per.delegate.handleNotification = self._get_hr
-    
-            self.active = True
-            self.connecting = False
-
-        except Exception as e:
-            print "Something went wrong while connecting: ", str(e)
-            self.active = False
-            self.connecting = False
-        
-    def _get_hr(self, cHandle, data):
-        """ callback for new values from self.per """
-        bpm = ord(data[1])
-        self.bpm = bpm
-        print "BPM:", bpm, "- time: %.2f"%(timeit.default_timer()-self.tick),
-        # if retrieved data is longer, we got RR interval, take the first
-        if len(data) >= 4:
-            # UINT16 format
-            rr = struct.unpack('H', data[2:4])[0]
-            # units of RR interval is 1/1024 sec
-            rr = rr/1024.
-            self.rr = rr
-            print "- RR:", rr,
-        print ""
-
-    def process(self):
-        """
-        Wait to pull data. Blocking call until new data or until should have received one.
-        NB: might try to connect and block for few seconds.
-        """
-    
-        # nothing to if not connected -- but still blocking with samplingrate
-        if not self.isActive():
-            time.sleep(1./self.israte)
-    
-        if self.active:
-          # FIXME: should detect disconnect
-          try:
-            self.per.waitForNotifications(1./self.israte)
-          # on any error we quit
-          except Exception as e:
-            print("Something went wrong while waiting for a new sample: " + str(e))
-            print("Disconnect")
-            try:
-              self.per.disconnect()
-              print("disconnected")
-            except:
-              print("error while disconnecting")
-            self.active = False
-            
-    def isActive(self):
-        """ getter for state of the connection + try to reco periodically if necessary. """
-        if self.active == False and abs(self.last_con-timeit.default_timer())>=self.reco_timeout:
-          self.connect() 
-        
-        return self.active
-    
-    def disconnect(self):
-        if self.active:
-            # way get ""
-            try:
-                self.per.disconnect()
-                print "disconnected"
-            except:
-                # may get "ValueError: need more than 1 value to unpack"??
-                print "error while disconnecting"
-
+    def print_hr(self, cHandle, data):
+        if len(data) >= 2:
+            if PYTHON_VERSION  == 2:
+                self.hr = ord(data[1])
+            else:
+                self.hr = data[1]
+            # we might get additionnal IBI data
+            self.newIBI = False
+            if len(data) >= 4:
+                self.newIBI = True
+                self.ibi = []
+                data = data[2:]
+                while len(data) >= 2:
+                    # UINT16 format, units of IBI interval is 1/1024 sec
+                    ibi = struct.unpack('H', data[0:2])[0] / 1024.
+                    self.ibi.append(ibi)
+                    data = data[2:]
+            if args.verbose :
+                print (args.name + " > BPM: " + str(self.hr) + "/ IBI: " + str(self.ibi))
 
 if __name__=="__main__":
-    from pylsl import StreamInfo, StreamOutlet
+
     # retrieve MAC address
     parser = argparse.ArgumentParser(description='Stream heart rate of bluetooth BLE compatible devices using LSL.')
-    parser.add_argument("device_mac", help="MAC address of the MAC device")
-    parser.add_argument("-id", "--id", help="Identifier for the device (default: 1), . Should be unique on the network", default=1, type=int)
+    parser.add_argument("-m", "--mac-address", help="MAC address of the  device.", default="F6:4A:06:35:E9:BA", type=str)
+    parser.add_argument("-n", "--name", help="LSL id on the network", default="EchoBlue", type=str)
+    parser.add_argument("-s", "--streaming", help="int describing what is streamed : 0 - nothing, 1 - HR, 2 - IBI, 3 - both", default="3", type=int)
+    parser.add_argument("-a", "--address-type", help="type : 0 = random, 1 = public", default="0", type=int)
+    parser.add_argument("-v", "--verbose", action='store_true', help="Print more verbose information.")
+    parser.add_argument("-r", "--reconnect", action='store_true', help="Automatically try to reconnect upon start or when connexion breaks, sending last values in the meantime.")
+    parser.set_defaults(verbose=True)
     args = parser.parse_args()
 
-    # will likely interpolate data if greater than 1Hz
-    samplingrate = 16
-    
-    # setting type for smartwatch
-    lsl_type = "watch_" + str(args.id)
-    lsl_id =  "conphyturehr1337_" + str(args.id)
-    
-    print "creating LSL of types: ", lsl_type
-    
-    # create LSL StreamOutlet
-    print "creating LSL outlet for heart-rate, sampling rate:", samplingrate, "Hz"
-    info_hr = StreamInfo('hr',lsl_type, 1, samplingrate, 'float32', lsl_id + "_hr")
-    outlet_hr = StreamOutlet(info_hr)
-    
-    print "creating LSL outlet for RR intervals, sampling rate:", samplingrate, "Hz"
-    info_rr = StreamInfo('rr','rr',1,samplingrate,'float32', lsl_id + "_rr")
-    outlet_rr = StreamOutlet(info_rr)
+    streaming_hr = (args.streaming == 1 or args.streaming == 3)
+    streaming_ibi = (args.streaming == 2 or args.streaming == 3)
 
-
-    hrm = HRM(args.device_mac, samplingrate, threaded_connection = True)
+    service_id = AssignedNumbers.heart_rate
+    char_id = AssignedNumbers.heart_rate_measurement
     
-    try:
-        while True:
-            hrm.process()
-            outlet_hr.push_sample([hrm.bpm])
-            outlet_rr.push_sample([hrm.rr])
+    hrm = HRM(args.mac_address, args.address_type, service_id, char_id, reconnect = args.reconnect, verbose = args.verbose)
+
+    # used for showing effective sampling rate
+    samples_hr_in = 0
+    samples_ibi_in = 0
+    debug_last_show = timeit.default_timer()
+    
+     # if "reconnect" set, will init the connetion in a separate thread, start streaming dummy values in the meantime
+    if hrm.connected or args.reconnect:
+        if streaming_hr :
+            print("Streaming HR data")
+            type_hr = "heart_rate"
+            info_hr = StreamInfo(args.name, type_hr, 1, SAMPLINGRATE_HR, 'float32', '%s_%s_%s' % (args.name, type_hr, args.mac_address))
+            outlet_hr = StreamOutlet(info_hr)
+
+        if streaming_ibi :
+            print("Streaming IBI data")
+            type_ibi = 'heart_ibi'
+            info_ibi = StreamInfo(args.name, type_ibi, 1, SAMPLINGRATE_IBI, 'float32', '%s_%s_%s' % (args.name, type_ibi, args.mac_address))
+            outlet_ibi = StreamOutlet(info_ibi)
+
+        # infinite loop if option set to reconnect automatically, otherwise loop while connected
+        while args.reconnect or hrm.isConnected():
+            newValHR = hrm.process(1./SAMPLINGRATE_HR) # at least one HR per sample, use this sampling rate
+            newValIBI = newValHR and hrm.newIBI # only get new IBI if got new values from Gatt
             
-    finally:
-        print "exiting"
-        hrm.disconnect()
+            # depending on option, stream only when get new values, or continuously last value upon reconnect                
+            if streaming_hr and (newValHR or not hrm.isConnected()):
+                outlet_hr.push_sample([hrm.hr])
+                    
+            if streaming_ibi:
+                # push all values if got new ones
+                if newValIBI:
+                    for ibi in hrm.ibi:
+                        outlet_ibi.push_sample([ibi])
+                # only last one if disconnected
+                elif not hrm.isConnected():
+                    outlet_ibi.push_sample([hrm.ibi[-1]])
+
+            # debug info about incoming sampling rate
+            if args.verbose:
+                if newValHR:
+                    samples_hr_in += 1
+                if newValIBI:
+                    samples_ibi_in += len(hrm.ibi)
+
+                tick = timeit.default_timer()
+                if tick-debug_last_show >= 1:
+                    print("Samples HR incoming at: " + str(samples_hr_in) + "Hz and samples IBI at: " + str(samples_ibi_in) + "Hz")
+                    samples_hr_in=0
+                    samples_ibi_in=0
+                    debug_last_show=tick
+                
+        # once here got disconnected, erase outlet before letting be
+        if streaming_hr :
+            del info_hr
+            del outlet_hr
+        if streaming_ibi :
+            del info_ibi
+            del outlet_ibi
+        
+        if args.verbose:
+            print("terminated")
