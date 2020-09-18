@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/git-commands/git-subrepo#readme
+;
+[subrepo]
+	remote = git@gitlab.com:ullo/sensors/gattdevice.git
+	branch = master
+	commit = 750aa3406dd0f0fa6ab08384d6b8b00655059603
+	parent = a0095ff3e9edfe0ad511a273c5c24dba2e24ecd4
+	method = merge
+	cmdver = 0.4.1
