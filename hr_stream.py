@@ -73,7 +73,7 @@ if __name__=="__main__":
     parser.add_argument("-a", "--address-type", help="type : 0 = random, 1 = public", default="0", type=int)
     parser.add_argument("-v", "--verbose", action='store_true', help="Print more verbose information.")
     parser.add_argument("-r", "--reconnect", action='store_true', help="Automatically try to reconnect upon start or when connexion breaks, sending last values in the meantime.")
-    parser.set_defaults(verbose=True)
+    parser.add_argument("-k", "--keep_sending", action='store_true', help="If option set, upon disconnection will keep sending the last value until retrieve connectivity with the smartwatch.")
     args = parser.parse_args()
 
     streaming_hr = (args.streaming == 1 or args.streaming == 3)
@@ -109,7 +109,7 @@ if __name__=="__main__":
             newValIBI = newValHR and hrm.newIBI # only get new IBI if got new values from Gatt
             
             # depending on option, stream only when get new values, or continuously last value upon reconnect                
-            if streaming_hr and (newValHR or not hrm.isConnected()):
+            if streaming_hr and (newValHR or (not hrm.isConnected() and args.keep_sending)):
                 outlet_hr.push_sample([hrm.hr])
                     
             if streaming_ibi:

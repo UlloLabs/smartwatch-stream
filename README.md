@@ -10,6 +10,7 @@ Requires [bluepy](https://github.com/IanHarvey/bluepy) and [LSL](https://github.
 - 2018-05-16: last version from conphyture project
 - 2020-7-17: new version fetched from echo codebase
 - 2020-9-18: refactoring, merging both -- breaking change!
+- 2020-9-27: API change: stop sending value when disconnected, unless "keep-sending" option is set
 
 # TODO
 
