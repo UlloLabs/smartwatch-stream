@@ -95,18 +95,18 @@ if __name__=="__main__":
         if streaming_hr :
             print("Streaming HR data")
             type_hr = "heart_rate"
-            info_hr = StreamInfo(args.name, type_hr, 1, SAMPLINGRATE_HR, 'float32', '%s_%s_%s' % (args.name, type_hr, args.mac_address))
+            info_hr = StreamInfo(args.name, type_hr, 1, args.sr_hr, 'float32', '%s_%s_%s' % (args.name, type_hr, args.mac_address))
             outlet_hr = StreamOutlet(info_hr)
 
         if streaming_ibi :
             print("Streaming IBI data")
             type_ibi = 'heart_ibi'
-            info_ibi = StreamInfo(args.name, type_ibi, 1, SAMPLINGRATE_IBI, 'float32', '%s_%s_%s' % (args.name, type_ibi, args.mac_address))
+            info_ibi = StreamInfo(args.name, type_ibi, 1, args.sr_ibi, 'float32', '%s_%s_%s' % (args.name, type_ibi, args.mac_address))
             outlet_ibi = StreamOutlet(info_ibi)
 
         # infinite loop if option set to reconnect automatically, otherwise loop while connected
         while args.reconnect or hrm.isConnected():
-            newValHR = hrm.process(1./SAMPLINGRATE_HR) # at least one HR per sample, use this sampling rate
+            newValHR = hrm.process(1./args.sr_hr) # at least one HR per sample, use this sampling rate
             newValIBI = newValHR and hrm.newIBI # only get new IBI if got new values from Gatt
             
             # depending on option, stream only when get new values, or continuously last value upon reconnect                
