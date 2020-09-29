@@ -12,13 +12,12 @@ import struct, argparse, timeit
 # Notice that we might push several IBI at once to LSL output, and effective IBI sampling rate might vary a lot.
 
 # TODO
-# - check smartwatch sampling rate
 # - we might get more than one IBI at times, depending on smartwatches
 # - better handle both python version? check data format
 
 # how often we expect to get new data from device (Hz)
-SAMPLINGRATE_HR = 1
-SAMPLINGRATE_IBI = 1
+DEFAULT_SAMPLINGRATE_HR = 1
+DEFAULT_SAMPLINGRATE_IBI = 1
 
 # data format changed between version
 if (sys.version_info > (3, 0)):
@@ -74,6 +73,8 @@ if __name__=="__main__":
     parser.add_argument("-v", "--verbose", action='store_true', help="Print more verbose information.")
     parser.add_argument("-r", "--reconnect", action='store_true', help="Automatically try to reconnect upon start or when connexion breaks, sending last values in the meantime.")
     parser.add_argument("-k", "--keep_sending", action='store_true', help="If option set, upon disconnection will keep sending the last value until retrieve connectivity with the smartwatch.")
+    parser.add_argument("-sr-hr", help="Expected sampling late for HR values. An integer, default: %s" % DEFAULT_SAMPLINGRATE_HR, default=DEFAULT_SAMPLINGRATE_HR, type=int)
+    parser.add_argument("-sr-ibi", help="Expected sampling late for IBI values. An integer, default: %s" % DEFAULT_SAMPLINGRATE_IBI, default=DEFAULT_SAMPLINGRATE_IBI, type=int)
     args = parser.parse_args()
 
     streaming_hr = (args.streaming == 1 or args.streaming == 3)
