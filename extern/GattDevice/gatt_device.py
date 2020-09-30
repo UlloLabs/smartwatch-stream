@@ -88,17 +88,19 @@ class GattDevice(object):
                 notif_val = '\1\0'
             self.per.writeCharacteristic(desc.handle, notif_val)
             self.per.delegate.handleNotification = self.handler
-            self.connected = True
+            with self.lock:
+                self.connected = True
             
         except:
             e = sys.exc_info()[0]
             print("Something went wrong while connecting: " + str(e))
-            self.connected = False
             try:
                 # attempts explicit disconnect, just in case
                 self.per.disconnect()
             except:
                  pass # silently away with any more troubles
+            with self.lock:
+                self.connected = False
        
         # exiting threaded function
         if self.verbose:
@@ -111,7 +113,11 @@ class GattDevice(object):
         
     def isConnected(self):
         """ getter for state of the connection + try to reco periodically if option set and necessary. """
-        if self.reconnect and not self.connected and abs(self.last_con-timeit.default_timer())>=self.reco_timeout:
+        attempt_connect = False
+        with self.lock:
+            if self.reconnect and not self.connected and not self.connecting and abs(self.last_con-timeit.default_timer())>=self.reco_timeout:
+                attempt_conncet = True
+        if attempt_connect:
             self.connect() 
         return self.connected
         
@@ -139,7 +145,8 @@ class GattDevice(object):
                     self.per.disconnect()
                 except:
                     pass # silently away with any more troubles
-                self.connected = False
+                with self.lock
+                    self.connected = False
                 if self.verbose:
                     print("disconnected")
         return newVal
