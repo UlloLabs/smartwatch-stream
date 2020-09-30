@@ -12,6 +12,7 @@ class GattDevice(object):
         handler: callback function for notification -- dummy one by default
         reconnect: will loop connection indefinitely, launching in in separate thread, upon init and in case BLE breaks. Side effect: if set init function will return immediately, before actually being connected, otherwise blocking call until a connexion attempt has been made
         verbose: print various debug info on stdout
+        TODO: to make sure that bluez helper does not hang, after some time we kill directly blupy helper process... not so pretty
         """
         self.addr = addr
         self.addr_type = addr_type
@@ -21,8 +22,12 @@ class GattDevice(object):
         # we cannot change that yet, how between two connection attempts (in seconds)
         self.connected = False
         self.connecting = False
-        self.reco_timeout = 2
-        self.last_con = 0
+        # how to wait before two attempts?
+        self.con_attempt_timeout = 2
+        self.last_con_attempt = 0
+        # how long to wait before once connection started before killing bluepy subprocess?
+        self.con_start_timeout = 10
+        self.last_con_start = 0
         # will point to BLE Peripheral once connected
         self.per = None    
         if handler is None:
@@ -65,12 +70,14 @@ class GattDevice(object):
                 print("no! thread: " + str(threading.get_ident()))
                 return
             self.connecting = True
+            self.last_con_start = timeit.default_timer()
      
         # FIXME: only pyhthon 3 for ident
         print("connecting to device " + str(self.addr) + " -- thread: " + str(threading.get_ident()))
 
         try:
-            self.per = Peripheral(self.addr, addrType=ADDR_TYPE_RANDOM if self.addr_type == 0 else  ADDR_TYPE_PUBLIC)
+            self.per = Peripheral()
+            self.per.connect(self.addr, addrType=ADDR_TYPE_RANDOM if self.addr_type == 0 else  ADDR_TYPE_PUBLIC)
             if self.verbose:
                 print("...connected")
             service, = [s for s in self.per.getServices() if s.uuid==self.service_id] # expect list with one entry, fetch it directly (same for below)
@@ -94,12 +101,12 @@ class GattDevice(object):
             with self.lock:
                 self.connected = True
             
-        except:
-            e = sys.exc_info()[0]
+        except Exception as e:
             print("Something went wrong while connecting: " + str(e))
             try:
-                # attempts explicit disconnect, just in case
-                self.per.disconnect()
+                # attempts explicit disconnect, just in case (testing per because maybe it was removed in isConnected() if connection timed out))
+                if self.per:
+                    self.per.disconnect()
             except:
                  pass # silently away with any more troubles
             with self.lock:
@@ -110,15 +117,24 @@ class GattDevice(object):
             print("End of connection attempt -- thread: " + str(threading.get_ident()))
 
         # will wait a bit before next attempt
-        self.last_con = timeit.default_timer()
+        self.last_con_attempt = timeit.default_timer()
         with self.lock:
             self.connecting = False
-        
+
     def isConnected(self):
         """ getter for state of the connection + try to reco periodically if option set and necessary. """
         attempt_connect = False
         with self.lock:
-            if self.reconnect and not self.connected and not self.connecting and abs(self.last_con-timeit.default_timer())>=self.reco_timeout:
+            # check if we should abort a connection
+            if not self.connected and self.connecting and timeit.default_timer() - self.last_con_start >= self.con_start_timeout:
+                print("rampage")
+                if self.per and self.per._helper:
+                    print("Attempt to connect timed out, terminate BLE connection")
+                    self.per._helper.kill()
+                    del(self.per)
+                    self.per = None
+                    self.connecting = False
+            if self.reconnect and not self.connected and not self.connecting and timeit.default_timer() - self.last_con_attempt >= self.con_attempt_timeout:
                 attempt_connect = True
         if attempt_connect:
             self.connect() 
