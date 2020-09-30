@@ -60,7 +60,8 @@ class GattDevice(object):
          # first resolve said stream type on the network
         self.last_con = timeit.default_timer()
         
-        print("connecting to device " + str(self.addr))
+        # FIXME: only pyhthon 3 for ident
+        print("connecting to device " + str(self.addr) + " -- thread: " + str(threading.get_ident()))
 
         try:
             self.per = Peripheral(self.addr, addrType=ADDR_TYPE_RANDOM if self.addr_type == 0 else  ADDR_TYPE_PUBLIC)
@@ -90,8 +91,15 @@ class GattDevice(object):
             e = sys.exc_info()[0]
             print("Something went wrong while connecting: " + str(e))
             self.connected = False
+            try:
+                # attempts explicit disconnect, just in case
+                self.per.disconnect()
+            except:
+                 pass # silently away with any more troubles
        
         # exiting threaded function
+        if self.verbose:
+            print("End of connection attempt -- thread: " + str(threading.get_ident()))
         self.connecting = False
         
     def isConnected(self):
