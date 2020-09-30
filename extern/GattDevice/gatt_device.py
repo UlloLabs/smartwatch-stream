@@ -43,10 +43,10 @@ class GattDevice(object):
     def connect(self):
         """ Attempt to (re)connect to device if not active. """
         # don't try to go further if already connected are getting to it
+        print("Thread: " + str(threading.get_ident()) + " test connect")
         with self.lock:
             if self.connected or self.connecting:
                 return
-            self.connecting = True
         # attempt to connect in separate thread if option set
         if self.reconnect:
             if self.verbose:
@@ -57,9 +57,12 @@ class GattDevice(object):
           
     def _do_connect(self):
         """ The actual function for connection, connect() should be called to handle reconnect and threading. """
+        if self.verbose:
+            print("Starting hread: " + str(threading.get_ident()))
         # we don't do double connections
         with self.lock:
             if self.connected or self.connecting:
+                print("no! thread: " + str(threading.get_ident()))
                 return
             self.connecting = True
      
@@ -116,7 +119,7 @@ class GattDevice(object):
         attempt_connect = False
         with self.lock:
             if self.reconnect and not self.connected and not self.connecting and abs(self.last_con-timeit.default_timer())>=self.reco_timeout:
-                attempt_conncet = True
+                attempt_connect = True
         if attempt_connect:
             self.connect() 
         return self.connected
@@ -145,7 +148,7 @@ class GattDevice(object):
                     self.per.disconnect()
                 except:
                     pass # silently away with any more troubles
-                with self.lock
+                with self.lock:
                     self.connected = False
                 if self.verbose:
                     print("disconnected")
