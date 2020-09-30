@@ -30,7 +30,8 @@ class GattDevice(object):
         else:
             self.handler = handler
         self.verbose = verbose
-        
+        # make sure we don't have race condition while testing for flag
+        self.lock = threading.RLock()
         self.connect()
       
     def dummy_handler(self, cHandle, data):
@@ -42,11 +43,14 @@ class GattDevice(object):
     def connect(self):
         """ Attempt to (re)connect to device if not active. """
         # don't try to go further if already connected are getting to it
-        if self.connected or self.connecting:
-            return
-        self.connecting = True
+        with self.lock:
+            if self.connected or self.connecting:
+                return
+            self.connecting = True
         # attempt to connect in separate thread if option set
         if self.reconnect:
+            if self.verbose:
+                print("Thread: " + str(threading.get_ident()) + " about to reconnect in separate thread")
             threading.Thread(target=self._do_connect).start()
         else:
             self._do_connect()
@@ -54,12 +58,11 @@ class GattDevice(object):
     def _do_connect(self):
         """ The actual function for connection, connect() should be called to handle reconnect and threading. """
         # we don't do double connections
-        if self.connected:
-          return
-      
-         # first resolve said stream type on the network
-        self.last_con = timeit.default_timer()
-        
+        with self.lock:
+            if self.connected or self.connecting:
+                return
+            self.connecting = True
+     
         # FIXME: only pyhthon 3 for ident
         print("connecting to device " + str(self.addr) + " -- thread: " + str(threading.get_ident()))
 
@@ -100,7 +103,11 @@ class GattDevice(object):
         # exiting threaded function
         if self.verbose:
             print("End of connection attempt -- thread: " + str(threading.get_ident()))
-        self.connecting = False
+
+        # will wait a bit before next attempt
+        self.last_con = timeit.default_timer()
+        with self.lock:
+            self.connecting = False
         
     def isConnected(self):
         """ getter for state of the connection + try to reco periodically if option set and necessary. """
