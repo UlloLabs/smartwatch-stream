@@ -86,7 +86,8 @@ class GattDevice(object):
             self.per.delegate.handleNotification = self.handler
             self.connected = True
             
-        except Exception as e:
+        except:
+            e = sys.exc_info()[0]
             print("Something went wrong while connecting: " + str(e))
             self.connected = False
        
