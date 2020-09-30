@@ -131,7 +131,7 @@ if __name__=="__main__":
 
                 tick = timeit.default_timer()
                 if tick-debug_last_show >= 1:
-                    print("Samples HR incoming at: " + str(samples_hr_in) + "Hz and samples IBI at: " + str(samples_ibi_in) + "Hz")
+                    #print("Samples HR incoming at: " + str(samples_hr_in) + "Hz and samples IBI at: " + str(samples_ibi_in) + "Hz")
                     samples_hr_in=0
                     samples_ibi_in=0
                     debug_last_show=tick
