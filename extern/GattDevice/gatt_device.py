@@ -128,12 +128,14 @@ class GattDevice(object):
             # check if we should abort a connection
             if not self.connected and self.connecting and timeit.default_timer() - self.last_con_start >= self.con_start_timeout:
                 print("rampage")
-                if self.per and self.per._helper:
+                if self.per:
                     print("Attempt to connect timed out, terminate BLE connection")
-                    self.per._helper.kill()
+                    if self.per._helper:
+                        print("kill helper")
+                        self.per._helper.kill()
                     del(self.per)
                     self.per = None
-                    self.connecting = False
+                self.connecting = False
             if self.reconnect and not self.connected and not self.connecting and timeit.default_timer() - self.last_con_attempt >= self.con_attempt_timeout:
                 attempt_connect = True
         if attempt_connect:
