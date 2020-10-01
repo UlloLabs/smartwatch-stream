@@ -26,7 +26,7 @@ class GattDevice(object):
         self.con_attempt_timeout = 2
         self.last_con_attempt = 0
         # how long to wait before once connection started before killing bluepy subprocess?
-        self.con_start_timeout = 10
+        self.con_start_timeout = 30
         self.last_con_start = 0
         # will point to BLE Peripheral once connected
         self.per = None    
