@@ -6,7 +6,7 @@
 [subrepo]
 	remote = git@gitlab.com:ullo/sensors/gattdevice.git
 	branch = master
-	commit = 750aa3406dd0f0fa6ab08384d6b8b00655059603
-	parent = a0095ff3e9edfe0ad511a273c5c24dba2e24ecd4
+	commit = f4d9cc1412d1065a917c58bc12fd98948b79dc52
+	parent = 6f21a246d247a9ccafe5aefb775664677fb970c2
 	method = merge
 	cmdver = 0.4.1
