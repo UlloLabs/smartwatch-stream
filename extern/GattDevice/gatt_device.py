@@ -48,32 +48,26 @@ class GattDevice(object):
     def connect(self):
         """ Attempt to (re)connect to device if not active. """
         # don't try to go further if already connected are getting to it
-        print("Thread: " + str(threading.get_ident()) + " test connect")
         with self.lock:
             if self.connected or self.connecting:
                 return
         # attempt to connect in separate thread if option set
         if self.reconnect:
-            if self.verbose:
-                print("Thread: " + str(threading.get_ident()) + " about to reconnect in separate thread")
             threading.Thread(target=self._do_connect).start()
         else:
             self._do_connect()
           
     def _do_connect(self):
         """ The actual function for connection, connect() should be called to handle reconnect and threading. """
-        if self.verbose:
-            print("Starting hread: " + str(threading.get_ident()))
         # we don't do double connections
         with self.lock:
             if self.connected or self.connecting:
-                print("no! thread: " + str(threading.get_ident()))
                 return
             self.connecting = True
             self.last_con_start = timeit.default_timer()
      
         # FIXME: only pyhthon 3 for ident
-        print("connecting to device " + str(self.addr) + " -- thread: " + str(threading.get_ident()))
+        print("connecting to device " + str(self.addr))
 
         try:
             self.per = Peripheral()
@@ -112,10 +106,6 @@ class GattDevice(object):
             with self.lock:
                 self.connected = False
        
-        # exiting threaded function
-        if self.verbose:
-            print("End of connection attempt -- thread: " + str(threading.get_ident()))
-
         # will wait a bit before next attempt
         self.last_con_attempt = timeit.default_timer()
         with self.lock:
@@ -127,11 +117,8 @@ class GattDevice(object):
         with self.lock:
             # check if we should abort a connection
             if not self.connected and self.connecting and timeit.default_timer() - self.last_con_start >= self.con_start_timeout:
-                print("rampage")
                 if self.per:
-                    print("Attempt to connect timed out, terminate BLE connection")
                     if self.per._helper:
-                        print("kill helper")
                         self.per._helper.kill()
                     del(self.per)
                     self.per = None
