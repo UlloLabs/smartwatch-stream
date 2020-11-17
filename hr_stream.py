@@ -113,13 +113,13 @@ if __name__=="__main__":
             if streaming_hr and (newValHR or (not hrm.isConnected() and args.keep_sending)):
                 outlet_hr.push_sample([hrm.hr])
                     
-            if streaming_ibi:
+            if streaming_ibi and (newValIBI or (not hrm.isConnected() and args.keep_sending)):
                 # push all values if got new ones
                 if newValIBI:
                     for ibi in hrm.ibi:
                         outlet_ibi.push_sample([ibi])
                 # only last one if disconnected
-                elif not hrm.isConnected():
+                elif not hrm.isConnected() and len(hrm.ibi) > 0:
                     outlet_ibi.push_sample([hrm.ibi[-1]])
 
             # debug info about incoming sampling rate
