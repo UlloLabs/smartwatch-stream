@@ -52,7 +52,7 @@ class GattDevice(object):
             if self.connected or self.connecting:
                 return
             self.connecting = True
-        self.last_con_start = timeit.default_timer()
+            self.last_con_start = timeit.default_timer()
         # attempt to connect in separate thread if option set
         if self.reconnect:
             threading.Thread(target=self._do_connect).start()
