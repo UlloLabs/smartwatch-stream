@@ -12,12 +12,14 @@ import struct, argparse, timeit
 # Notice that we might push several IBI at once to LSL output, and effective IBI sampling rate might vary a lot.
 
 # TODO
-# - we might get more than one IBI at times, depending on smartwatches
 # - better handle both python version? check data format
 
 # how often we expect to get new data from device (Hz)
 DEFAULT_SAMPLINGRATE_HR = 1
 DEFAULT_SAMPLINGRATE_IBI = 1
+
+# how often we show info about sampling rate
+DEFAULT_DEBUG_INTERVAL = 5
 
 # data format changed between version
 if (sys.version_info > (3, 0)):
@@ -130,7 +132,7 @@ if __name__=="__main__":
                     samples_ibi_in += len(hrm.ibi)
 
                 tick = timeit.default_timer()
-                if tick-debug_last_show >= 1:
+                if tick-debug_last_show >= DEFAULT_DEBUG_INTERVAL:
                     print("Samples HR incoming at: " + str(samples_hr_in) + "Hz and samples IBI at: " + str(samples_ibi_in) + "Hz")
                     samples_hr_in=0
                     samples_ibi_in=0
