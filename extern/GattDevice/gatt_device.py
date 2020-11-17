@@ -51,6 +51,8 @@ class GattDevice(object):
         with self.lock:
             if self.connected or self.connecting:
                 return
+            self.connecting = True
+        self.last_con_start = timeit.default_timer()
         # attempt to connect in separate thread if option set
         if self.reconnect:
             threading.Thread(target=self._do_connect).start()
@@ -59,13 +61,6 @@ class GattDevice(object):
           
     def _do_connect(self):
         """ The actual function for connection, connect() should be called to handle reconnect and threading. """
-        # we don't do double connections
-        with self.lock:
-            if self.connected or self.connecting:
-                return
-            self.connecting = True
-            self.last_con_start = timeit.default_timer()
-     
         # FIXME: only pyhthon 3 for ident
         print("connecting to device " + str(self.addr))
 
@@ -99,8 +94,9 @@ class GattDevice(object):
             print("Something went wrong while connecting: " + str(e))
             try:
                 # attempts explicit disconnect, just in case (testing per because maybe it was removed in isConnected() if connection timed out))
-                if self.per:
-                    self.per.disconnect()
+                with self.lock:
+                    if self.per:
+                        self.per.disconnect()
             except:
                  pass # silently away with any more troubles
             with self.lock:
@@ -115,14 +111,16 @@ class GattDevice(object):
         """ getter for state of the connection + try to reco periodically if option set and necessary. """
         attempt_connect = False
         with self.lock:
-            # check if we should abort a connection
-            if not self.connected and self.connecting and timeit.default_timer() - self.last_con_start >= self.con_start_timeout:
-                if self.per:
+            # bluez helper can stall, check if we should abort a connection
+            if self.per and not self.connected and self.connecting and timeit.default_timer() - self.last_con_start >= self.con_start_timeout:
+                try:
                     if self.per._helper:
                         self.per._helper.kill()
                     del(self.per)
-                    self.per = None
-                self.connecting = False
+                except Exception as e: 
+                    print("exception while cleanup: " + str(e))
+                self.per = None
+                # NB here we count on the thread to terminate nicely on its end and set back self.connecting flag to False
             if self.reconnect and not self.connected and not self.connecting and timeit.default_timer() - self.last_con_attempt >= self.con_attempt_timeout:
                 attempt_connect = True
         if attempt_connect:
