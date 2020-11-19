@@ -155,7 +155,32 @@ class GattDevice(object):
         Process new data upon waitForNotification(). Client should create and call their own hanlder, here just print
         """
         print("get data: " + str(data) + ", from: " + str(cHandle))
-      
+
+    def connect_chars(self):
+        """
+        To be overloaded if necessary, take care to list services / characteristics of interest.
+        TODO: better way to build on GattDevice
+        """
+        if self.per is not None:
+            service, = [s for s in self.per.getServices() if s.uuid==self.service_id] # expect list with one entry, fetch it directly (same for below)
+            if self.verbose:
+                print("Got service")
+            ccc, = service.getCharacteristics(forUUID=self.char_id)
+            if self.verbose:
+                print("Got characteristic")
+            # try to find within desrciptors of this characteristic the one that enables config
+            cccid = AssignedNumbers.client_characteristic_configuration
+            desc, = ccc.getDescriptors(forUUID=cccid)
+            if self.verbose:
+                print("Got descriptor, writing init sequence")
+            # sligthly changed function depending on python
+            if (sys.version_info > (3, 0)):
+                notif_val = b"\x01\x00"
+            else:
+                notif_val = '\1\0'
+            self.per.writeCharacteristic(desc.handle, notif_val)
+            self.per.delegate.handleNotification = self.handler
+
     def connect(self):
         """ Attempt to (re)connect to device if not active. """
         # don't try to go further if already connected are getting to it
@@ -196,25 +221,10 @@ class GattDevice(object):
             self.per = MyPeripheral()
             self.per.connect(self.addr, addrType=ADDR_TYPE_RANDOM if self.addr_type == 0 else  ADDR_TYPE_PUBLIC, timeout=self.con_timeout)
             if self.verbose:
-                print("...connected")
-            service, = [s for s in self.per.getServices() if s.uuid==self.service_id] # expect list with one entry, fetch it directly (same for below)
+                print("...connected to device")
+            self.connect_chars()
             if self.verbose:
-                print("Got service")
-            ccc, = service.getCharacteristics(forUUID=self.char_id)
-            if self.verbose:
-                print("Got characteristic")
-            # try to find within desrciptors of this characteristic the one that enables config
-            cccid = AssignedNumbers.client_characteristic_configuration
-            desc, = ccc.getDescriptors(forUUID=cccid)
-            if self.verbose:
-                print("Got descriptor, writing init sequence")
-            # sligthly changed function depending on python
-            if (sys.version_info > (3, 0)):
-                notif_val = b"\x01\x00"
-            else:
-                notif_val = '\1\0'
-            self.per.writeCharacteristic(desc.handle, notif_val)
-            self.per.delegate.handleNotification = self.handler
+                print("connection ready")
             with self.lock:
                 self.connected = True
             
