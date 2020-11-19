@@ -9,9 +9,16 @@ import time, timeit, threading, sys
 
 # for bluepy hack
 from bluepy.btle import ScanEntry, BTLEDisconnectError, helperExe, DBG
-from subprocess import TimeoutExpired
 
-import os, subprocess, select, signal
+# sligthly changed function depending on python
+if (sys.version_info > (3, 0)):
+    import subprocess
+    from subprocess import TimeoutExpired
+else:
+    import subprocess32 as subprocess
+    from subprocess32 import TimeoutExpired
+
+import os, select
 
 # copied from https://github.com/IanHarvey/bluepy/pull/374 -- adding timeout for connect
 class MyPeripheral(Peripheral):
