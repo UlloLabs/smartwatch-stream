@@ -82,7 +82,7 @@ class MyPeripheral(Peripheral):
             self._helper.stdin.write("quit\n")
             self._helper.stdin.flush()
             try:
-                self._helper.wait(WAIT_PROCESS)
+                self._helper.wait(MyPeripheral.WAIT_PROCESS)
             except TimeoutExpired:
                 self._helper.kill()
             self._helper = None
