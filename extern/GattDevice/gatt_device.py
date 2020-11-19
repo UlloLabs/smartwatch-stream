@@ -1,5 +1,6 @@
 
 # FIXME: on some weird occasions bluepy might freeze (?). At the moment we allow in that case, multiple subprocesses / threads to span, could have memory leak, should be investigated. We could as well just exit in that case -- with a special flag?
+# Later: bug might be corrected (faulty preexec_fn), but leaving terminate/kill/duplicate until deemed safe
 
 # NB: several hotfix here related to bluepy, not pretty. At the moment working with 1.3.0. Might consider newer version, e.g. for https://github.com/IanHarvey/bluepy/pull/355
 
@@ -10,8 +11,21 @@ import time, timeit, threading, sys
 from bluepy.btle import ScanEntry, BTLEDisconnectError, helperExe, DBG
 from subprocess import TimeoutExpired
 
+import os, subprocess, select, signal
+
+# hotfix: try on setting signal, to avoid hang upon Popen
+def preexec_function():
+    # Ignore the SIGINT signal by setting the handler to the standard
+    # signal handler SIG_IGN.
+    try:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+    except:
+        pass
+
 # copied from https://github.com/IanHarvey/bluepy/pull/374 -- adding timeout for connect
 class MyPeripheral(Peripheral):
+    # how long to wait upon close for the process to gravciously terminate killing it? 
+    WAIT_PROCESS = 2
     def __init__(self, deviceAddr=None, addrType=ADDR_TYPE_PUBLIC, iface=None, timeout=None):
         Peripheral.__init__(self)
 
@@ -19,6 +33,24 @@ class MyPeripheral(Peripheral):
             self._connect(deviceAddr.addr, deviceAddr.addrType, deviceAddr.iface, timeout)
         elif deviceAddr is not None:
             self._connect(deviceAddr, addrType, iface, timeout)
+            
+
+    # hotfix: call to alternate preexec, close_fds for all
+    def _startHelper(self,iface=None):
+        if self._helper is None:
+            self._stderr = open(os.devnull, "w")
+            args=[helperExe]
+            if iface is not None: args.append(str(iface))
+            self._helper = subprocess.Popen(args,
+                                            close_fds=True, # already there for python3
+                                            stdin=subprocess.PIPE,
+                                            stdout=subprocess.PIPE,
+                                            stderr=self._stderr,
+                                            universal_newlines=True,
+                                            preexec_fn = preexec_function)
+            self._poller = select.poll()
+            self._poller.register(self._helper.stdout, select.POLLIN)
+
             
     def _connect(self, addr, addrType=ADDR_TYPE_PUBLIC, iface=None, timeout=None):
         if len(addr.split(":")) != 6:
@@ -60,7 +92,7 @@ class MyPeripheral(Peripheral):
             self._helper.stdin.write("quit\n")
             self._helper.stdin.flush()
             try:
-               self._helper.wait(3)
+                self._helper.wait(WAIT_PROCESS)
             except TimeoutExpired:
                 self._helper.kill()
             self._helper = None
@@ -71,6 +103,9 @@ class MyPeripheral(Peripheral):
     # hotfix to avoid hanging, disable "stat", see https://github.com/IanHarvey/bluepy/issues/390
     def disconnect(self):
         if self._helper is None:
+            # actually might want to cleanup other objects
+            self.setDelegate(None)
+            self._stopHelper()
             return
         # Unregister the delegate first
         self.setDelegate(None)
@@ -106,10 +141,16 @@ class GattDevice(object):
         # for emergency, how long to wait before once connection started before killing bluepy subprocess?
         self.con_start_timeout = 30
         self.last_con_start = 0
+        # for emergency emergency, how long to wait before repeating terminating signal?
+        self.terminate_timeout = 2
+        self.last_terminate = 0
+        # pointer to last launched thread and current thread to have proper garbage collector
+        self.last_thread = None
+        self.thread = None
         # will point to BLE Peripheral once connected
         self.per = None    
-        # we might go the hard way to reset ble connection
-        self.killing = False
+        # we might go the hard way to reset ble connection. 0: no killing, 1: sigtermng, 2: sigkillng
+        self.killing =  0
         if handler is None:
             self.handler = self.dummy_handler
         else:
@@ -132,11 +173,14 @@ class GattDevice(object):
             if self.connected or self.connecting:
                 return
             self.connecting = True
-            self.killing = False
+            self.killing = 0
             self.last_con_start = timeit.default_timer()
         # attempt to connect in separate thread if option set
         if self.reconnect:
-            threading.Thread(target=self._do_connect).start()
+            with self.lock:
+                self.last_thread = self.thread
+                self.thread = threading.Thread(target=self._do_connect)
+            self.thread.start()
         else:
             self._do_connect()
           
@@ -145,6 +189,19 @@ class GattDevice(object):
         # FIXME: only pyhthon 3 for ident
         print("connecting to device " + str(self.addr))
 
+        if self.last_thread is not None:
+            if self.verbose:
+                print("waiting for previous thread to exit properly")
+            try:
+                # FIXME: yes, hardcoded value
+                self.last_thread.join(MyPeripheral.WAIT_PROCESS)
+            except Exception as e:
+                print("Something went wrong while waiting for previous thread to terminate: " + str(e))
+
+        with self.lock:
+            if self.per is not None:
+                del(self.per)
+                self.per = None
         try:
             self.per = MyPeripheral()
             self.per.connect(self.addr, addrType=ADDR_TYPE_RANDOM if self.addr_type == 0 else  ADDR_TYPE_PUBLIC, timeout=self.con_timeout)
@@ -176,7 +233,7 @@ class GattDevice(object):
             try:
                 # attempts explicit disconnect, just in case (testing per because maybe it was removed in isConnected() if connection timed out))
                 with self.lock:
-                    if self.per and not self.killing:
+                    if self.per and self.killing == 0:
                         self.per.disconnect()
             except Exception as e:
                  print("exception while cleanup: " + str(e))
@@ -193,24 +250,36 @@ class GattDevice(object):
         """ getter for state of the connection + try to reco periodically if option set and necessary. """
         attempt_connect = False
         with self.lock:
-            # bluez helper can stall, check if we should abort a connection
-            if self.per and not self.connected and self.connecting and timeit.default_timer() - self.last_con_start >= self.con_start_timeout:
-                # we already tried to issue the command once, and we lost the pointer to subprocess, no choice but to give up and allow duplicate thread
-                if self.killing and not self.per._helper:
-                    print("HOTFIX: could not stop old thread, give up allow new thread")
-                    self.connecting = False
-                else:
-                    self.killing = True
-                    try:
-                        if self.per._helper:
-                            self.per._helper.kill()
-                    except Exception as e: 
-                        print("exception while killing: " + str(e))
-                # will try periodically to kill, just in (unlikely) case something is stalling
-                self.last_con_start = timeit.default_timer()
-                # NB here we count on the thread to terminate nicely on its end and set back self.connecting flag to False
-            if self.reconnect and not self.connected and not self.connecting and timeit.default_timer() - self.last_con_attempt >= self.con_attempt_timeout:
-                attempt_connect = True
+            if not self.connected and self.reconnect:
+                # bluez helper can stall, check if we should try abort a connection
+                if self.per and self.connecting and timeit.default_timer() - self.last_con_start >= self.con_start_timeout and self.killing == 0:
+                    # will try sigterm
+                    self.killing = 1
+                    if self.per._helper:
+                        try:
+                            self.per._helper.terminate()
+                        except Exception as e: 
+                            print("exception while terminating: " + str(e))
+                    # wait a bit before going kill
+                    self.last_terminate = timeit.default_timer()
+                elif self.per and self.connecting and timeit.default_timer() - self.last_terminate >= self.terminate_timeout and self.killing > 0:
+                    # we already tried to issue the command once, and we lost the pointer to subprocess, no choice but to give up and allow duplicate thread
+                    if self.killing >= 2 and not self.per._helper:
+                        print("HOTFIX: could not stop old thread, give up allow new thread")
+                        self.connecting = False
+                        attempt_connect = True
+                    
+                    elif self.killing >= 1:
+                        self.killing = 2
+                        try:
+                            if self.per._helper:
+                                self.per._helper.kill()
+                        except Exception as e: 
+                            print("exception while killing: " + str(e))
+                    self.last_terminate = timeit.default_timer()
+                    # NB here we count on the thread to terminate nicely on its end and set back self.connecting flag to False
+                elif not self.connecting and timeit.default_timer() - self.last_con_attempt >= self.con_attempt_timeout:
+                    attempt_connect = True
         if attempt_connect:
             self.connect() 
         return self.connected
