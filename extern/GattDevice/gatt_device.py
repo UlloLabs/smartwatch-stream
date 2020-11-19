@@ -13,15 +13,6 @@ from subprocess import TimeoutExpired
 
 import os, subprocess, select, signal
 
-# hotfix: try on setting signal, to avoid hang upon Popen
-def preexec_function():
-    # Ignore the SIGINT signal by setting the handler to the standard
-    # signal handler SIG_IGN.
-    try:
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
-    except:
-        pass
-
 # copied from https://github.com/IanHarvey/bluepy/pull/374 -- adding timeout for connect
 class MyPeripheral(Peripheral):
     # how long to wait upon close for the process to gravciously terminate killing it? 
@@ -35,7 +26,7 @@ class MyPeripheral(Peripheral):
             self._connect(deviceAddr, addrType, iface, timeout)
             
 
-    # hotfix: call to alternate preexec, close_fds for all
+    # hotfix: disable preexec_fun to avoid hang upon Popen, close_fds for all
     def _startHelper(self,iface=None):
         if self._helper is None:
             self._stderr = open(os.devnull, "w")
@@ -46,8 +37,7 @@ class MyPeripheral(Peripheral):
                                             stdin=subprocess.PIPE,
                                             stdout=subprocess.PIPE,
                                             stderr=self._stderr,
-                                            universal_newlines=True,
-                                            preexec_fn = preexec_function)
+                                            universal_newlines=True)
             self._poller = select.poll()
             self._poller.register(self._helper.stdout, select.POLLIN)
 
