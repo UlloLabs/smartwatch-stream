@@ -67,7 +67,7 @@ class HRM(GattDevice):
 if __name__=="__main__":
 
     # retrieve MAC address
-    parser = argparse.ArgumentParser(description='Stream heart rate of bluetooth BLE compatible devices using LSL.')
+    parser = argparse.ArgumentParser(description='Stream heart rate of bluetooth BLE compatible devices using LSL')
     parser.add_argument("-m", "--mac-address", help="MAC address of the  device.", default="F6:4A:06:35:E9:BA", type=str)
     parser.add_argument("-n", "--name", help="LSL id on the network", default="EchoBlue", type=str)
     parser.add_argument("-s", "--streaming", help="int describing what is streamed : 0 - nothing, 1 - HR, 2 - IBI, 3 - both", default="3", type=int)
@@ -133,7 +133,9 @@ if __name__=="__main__":
 
                 tick = timeit.default_timer()
                 if tick-debug_last_show >= DEFAULT_DEBUG_INTERVAL:
-                    print("Samples HR incoming at: " + str(samples_hr_in) + "Hz and samples IBI at: " + str(samples_ibi_in) + "Hz")
+                    hr_srate = samples_hr_in / float(DEFAULT_DEBUG_INTERVAL)
+                    ibi_srate = samples_ibi_in / float(DEFAULT_DEBUG_INTERVAL)
+                    print("Samples HR incoming at: " + str(hr_srate) + "Hz and samples IBI at: " + str(ibi_srate) + "Hz")
                     samples_hr_in=0
                     samples_ibi_in=0
                     debug_last_show=tick
