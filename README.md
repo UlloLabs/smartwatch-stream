@@ -12,9 +12,14 @@ Requires [bluepy](https://github.com/IanHarvey/bluepy) and [LSL](https://github.
 - 2020-9-18: refactoring, merging both -- breaking change!
 - 2020-9-27: API change: stop sending value when disconnected, unless "keep-sending" option is set
 
+## multi branch
+
+Test for multi-platform script, using bleak.
+
 # TODO
 
 - configure separately name/type for LSL
+- multi: no "keep sending" option at the moment
  
 # Dev
 
